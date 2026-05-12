@@ -40,11 +40,13 @@ interface Trade {
 type Window = "24h" | "7d" | "all";
 type StatusFilter = "all" | "active" | "closed";
 type SideFilter = "all" | "LONG" | "SHORT" | "WAIT";
+type LeadFilter = string; // "all" or a specific agent id (the lead)
 
 export function ResultsTerminal({ runs }: { runs: HeartbeatRun[] }) {
   const [windowSel, setWindowSel] = useState<Window>("7d");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sideFilter, setSideFilter] = useState<SideFilter>("all");
+  const [leadFilter, setLeadFilter] = useState<LeadFilter>("all");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   // Build a map of parent runId -> latest re-examination so we can surface
@@ -97,6 +99,23 @@ export function ResultsTerminal({ runs }: { runs: HeartbeatRun[] }) {
     return tradeDecisionTrades.filter((t) => new Date(t.createdAt).getTime() >= cutoff);
   }, [tradeDecisionTrades, windowSel]);
 
+  // Distinct leads (agent id + name) seen in the current window. Used to render
+  // the Lead filter only when there are multiple desks to choose between.
+  const leads = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const t of windowed) {
+      if (!seen.has(t.agentId)) seen.set(t.agentId, t.agentName);
+    }
+    return Array.from(seen, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [windowed]);
+
+  // Reset Lead filter if the selected lead disappears from the window (e.g. user changed window).
+  useEffect(() => {
+    if (leadFilter !== "all" && !leads.some((l) => l.id === leadFilter)) {
+      setLeadFilter("all");
+    }
+  }, [leads, leadFilter]);
+
   const filtered = useMemo(() => {
     return windowed.filter((t) => {
       if (statusFilter === "active") {
@@ -105,9 +124,10 @@ export function ResultsTerminal({ runs }: { runs: HeartbeatRun[] }) {
         if (t.resolutionStatus !== "resolved" && t.resolutionStatus !== "expired") return false;
       }
       if (sideFilter !== "all" && t.side !== sideFilter) return false;
+      if (leadFilter !== "all" && t.agentId !== leadFilter) return false;
       return true;
     });
-  }, [windowed, statusFilter, sideFilter]);
+  }, [windowed, statusFilter, sideFilter, leadFilter]);
 
   const stats = useMemo(() => computeStats(windowed), [windowed]);
 
@@ -176,6 +196,14 @@ export function ResultsTerminal({ runs }: { runs: HeartbeatRun[] }) {
           </div>
           <FilterRow value={statusFilter} options={["all", "active", "closed"]} onChange={(v) => setStatusFilter(v as StatusFilter)} />
           <FilterRow value={sideFilter} options={["all", "LONG", "SHORT", "WAIT"]} onChange={(v) => setSideFilter(v as SideFilter)} />
+          {leads.length >= 2 && (
+            <FilterRow
+              value={leadFilter}
+              options={["all", ...leads.map((l) => l.id)]}
+              labels={{ all: "all", ...Object.fromEntries(leads.map((l) => [l.id, l.name])) }}
+              onChange={(v) => setLeadFilter(v as LeadFilter)}
+            />
+          )}
 
           <div className="rounded-lg border border-border bg-card/40 max-h-[640px] overflow-y-auto">
             {filtered.length === 0 ? (
@@ -222,9 +250,19 @@ export function ResultsTerminal({ runs }: { runs: HeartbeatRun[] }) {
   );
 }
 
-function FilterRow({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
+function FilterRow({
+  value,
+  options,
+  labels,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  labels?: Record<string, string>;
+  onChange: (v: string) => void;
+}) {
   return (
-    <div className="flex items-center gap-1 rounded-md border border-border p-0.5 w-fit">
+    <div className="flex items-center gap-1 rounded-md border border-border p-0.5 w-fit max-w-full flex-wrap">
       {options.map((opt) => (
         <button
           key={opt}
@@ -233,7 +271,7 @@ function FilterRow({ value, options, onChange }: { value: string; options: strin
             value === opt ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground"
           }`}
         >
-          {opt}
+          {labels?.[opt] ?? opt}
         </button>
       ))}
     </div>
@@ -266,6 +304,9 @@ function BlotterRow({ trade }: { trade: Trade }) {
           {trade.stopLoss !== null && <span> · sl {fmt(trade.stopLoss)}</span>}
         </div>
         <MonitoringBadge run={trade.rawRun} compact />
+      </div>
+      <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/70 truncate">
+        {trade.agentName}
       </div>
       {reExam && reExam.convictionScore !== null && (
         <div className="flex items-center gap-1.5 text-[10px] font-mono">

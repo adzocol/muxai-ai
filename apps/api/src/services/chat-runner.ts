@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import { prisma } from "../lib/db";
-import { CLAUDE_CLI, MUXAI_ROOT, buildMcpConfig } from "./claude-spawn";
+import { CLAUDE_CLI, MUXAI_ROOT, buildMcpConfig, resolveMethodologyPath } from "./claude-spawn";
 import { DEFAULT_MODEL } from "./models";
 import { parseStreamJson, extractAssistantText } from "./stream-parser";
 import { INTERNAL_SECRET } from "./internal-secret";
@@ -37,6 +37,7 @@ export async function runChatTurn(opts: RunChatTurnOpts): Promise<string> {
     const isBuiltin = cwd === MUXAI_ROOT;
     const maxTurns = (config.maxTurnsPerRun as number) || 20;
     const disallowedTools = config.disallowedTools as string | undefined;
+    const methodologyPath = resolveMethodologyPath(config.methodologySkill as string | undefined);
 
     args = [
       "--model", model,
@@ -48,6 +49,7 @@ export async function runChatTurn(opts: RunChatTurnOpts): Promise<string> {
     ];
     if (session.claudeSessionId) args.splice(0, 0, "--resume", session.claudeSessionId);
     if (systemPrompt?.trim()) args.splice(args.indexOf("--output-format"), 0, "--system-prompt", systemPrompt);
+    if (methodologyPath) args.splice(args.indexOf("--output-format"), 0, "--append-system-prompt-file", methodologyPath);
     if (disallowedTools) args.splice(args.indexOf("--output-format"), 0, "--disallowedTools", disallowedTools);
     if (isBuiltin) {
       try {

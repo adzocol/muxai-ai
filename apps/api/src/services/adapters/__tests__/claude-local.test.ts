@@ -7,6 +7,7 @@ vi.mock("../../claude-spawn", () => ({
   MUXAI_ROOT: "/mock/muxai-root",
   buildMcpConfig: vi.fn().mockResolvedValue('{"mcpServers":{}}'),
   buildDefaultPrompt: vi.fn().mockReturnValue("You are TestBot, a general agent."),
+  resolveMethodologyPath: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock("../../internal-secret", () => ({
@@ -14,9 +15,10 @@ vi.mock("../../internal-secret", () => ({
 }));
 
 import { claudeLocalAdapter } from "../claude-local";
-import { buildMcpConfig } from "../../claude-spawn";
+import { buildMcpConfig, resolveMethodologyPath } from "../../claude-spawn";
 
 const mockBuildMcpConfig = vi.mocked(buildMcpConfig);
+const mockResolveMethodologyPath = vi.mocked(resolveMethodologyPath);
 
 function makeAgent(overrides: Partial<AdapterAgent> = {}): AdapterAgent {
   return {
@@ -40,6 +42,7 @@ describe("claudeLocalAdapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBuildMcpConfig.mockResolvedValue('{"mcpServers":{}}');
+    mockResolveMethodologyPath.mockReturnValue(null);
   });
 
   it("has type claude_local", () => {
@@ -194,6 +197,34 @@ describe("claudeLocalAdapter", () => {
       const sysIdx = config.args.indexOf("--system-prompt");
       const systemPrompt = config.args[sysIdx + 1];
       expect(systemPrompt).toContain("get_my_decisions");
+    });
+
+    // ── Methodology skill ──
+
+    it("appends methodology file when methodologySkill resolves", async () => {
+      mockResolveMethodologyPath.mockReturnValue("/mock/muxai-root/packages/methodology-skills/skills/analysis/wyckoff.md");
+      const agent = makeAgent({
+        adapterConfig: { ...makeAgent().adapterConfig, methodologySkill: "analysis/wyckoff" },
+      });
+      const config = await claudeLocalAdapter.buildSpawnConfig(agent, {});
+      expect(mockResolveMethodologyPath).toHaveBeenCalledWith("analysis/wyckoff");
+      const idx = config.args.indexOf("--append-system-prompt-file");
+      expect(idx).toBeGreaterThan(-1);
+      expect(config.args[idx + 1]).toBe("/mock/muxai-root/packages/methodology-skills/skills/analysis/wyckoff.md");
+    });
+
+    it("omits methodology flag when methodologySkill is unset", async () => {
+      const config = await claudeLocalAdapter.buildSpawnConfig(makeAgent(), {});
+      expect(config.args).not.toContain("--append-system-prompt-file");
+    });
+
+    it("omits methodology flag when id is unresolvable", async () => {
+      mockResolveMethodologyPath.mockReturnValue(null);
+      const agent = makeAgent({
+        adapterConfig: { ...makeAgent().adapterConfig, methodologySkill: "bogus/id" },
+      });
+      const config = await claudeLocalAdapter.buildSpawnConfig(agent, {});
+      expect(config.args).not.toContain("--append-system-prompt-file");
     });
 
     // ── Env vars ──

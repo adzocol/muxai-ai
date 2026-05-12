@@ -30,4 +30,15 @@ export const TEAM_BLUEPRINTS: TeamBlueprint[] = [
       { templateId: "data-analyst", role: "reporter" },
     ],
   },
+  {
+    id: "wyckoff-desk",
+    label: "Wyckoff Desk",
+    description: "Phase-driven trading team built around the Wyckoff method. A single Wyckoff Analyst replaces the separate technical and data analysts — reading price, volume, and Composite Operator footprint (funding, OI, positioning) as one integrated phase call, with the news analyst supplying catalyst context.",
+    image: "/wyckoff_desk_team.jpg",
+    members: [
+      { templateId: "team-lead", role: "lead" },
+      { templateId: "news-analyst", role: "reporter" },
+      { templateId: "wyckoff-analyst", role: "reporter" },
+    ],
+  },
 ];

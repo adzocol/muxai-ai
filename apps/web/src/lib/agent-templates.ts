@@ -31,6 +31,7 @@ export interface AgentTemplate {
   persistLogs?: boolean;
   reviewDecisions?: boolean;
   memoryEnabled?: boolean;
+  methodologySkill?: string;
   resultCard?: { type: string; mapping: Record<string, string> };
 }
 
@@ -118,6 +119,28 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       model: "claude-sonnet-4-6",
       cwd: "",
       disallowedTools: "Read,Write,Edit,Bash,Grep,Glob,Agent,mcp__news-analyst__get_crypto_news,mcp__chart-analyst__analyze_chart,mcp__crypto-ohlcv__get_candles,mcp__crypto-ohlcv__get_indicators,mcp__crypto-ohlcv__search_symbols,mcp__wallet__wallet_address,mcp__wallet__wallet_fetch,mcp__contractor__ask_contractor,mcp__contractor__list_contractors,mcp__orchestrator__run_team,mcp__orchestrator__ask_reporter,mcp__orchestrator__get_my_decisions,mcp__events__get_upcoming_events,mcp__events__get_recent_events",
+      maxTurnsPerRun: "10",
+      customCron: "",
+    },
+  },
+  {
+    id: "wyckoff-analyst",
+    label: "Wyckoff Analyst",
+    description: "Combined chart + derivatives analyst applying the Wyckoff phase methodology.",
+    defaultPrompt: "Analyze BTC/USDT on the 4-hour timeframe using the Wyckoff method. Map the current phase, confirm with volume and Composite Operator footprint, and state invalidation.",
+    mcpPreset: "builtin",
+    schedulePreset: "disabled",
+    persistLogs: true,
+    memoryEnabled: false,
+    methodologySkill: "analysis/wyckoff",
+    form: {
+      name: "Wyckoff Analyst",
+      role: "technical-analyst",
+      title: "Wyckoff Phase Analyst",
+      capabilities: "Wyckoff phase mapping, volume-confirmed price action, Composite Operator footprint reading via funding/OI/positioning",
+      model: "claude-opus-4-7",
+      cwd: "",
+      disallowedTools: "Read,Write,Edit,Bash,Grep,Glob,Agent,mcp__news-analyst__get_crypto_news,mcp__wallet__wallet_address,mcp__wallet__wallet_fetch,mcp__contractor__ask_contractor,mcp__contractor__list_contractors,mcp__orchestrator__run_team,mcp__orchestrator__ask_reporter,mcp__orchestrator__get_my_decisions,mcp__events__get_upcoming_events,mcp__events__get_recent_events",
       maxTurnsPerRun: "10",
       customCron: "",
     },

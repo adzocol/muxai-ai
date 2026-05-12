@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.1.8] - 2026-05-12
+
+### Added
+
+- **Methodology skills** — third agent layer (a "lens") on top of role + capabilities. One methodology per agent via `adapterConfig.methodologySkill`. Library lives at `packages/methodology-skills/skills/<category>/<slug>.md` with YAML frontmatter (`id`, `label`, `category`, `summary`); seeded with `analysis/wyckoff` and `risk/conservative-sizing`
+- `resolveMethodologyPath()` in `apps/api/src/services/claude-spawn.ts` — regex-guarded id resolver (`^[a-z0-9_-]+/[a-z0-9_-]+$`) that blocks path-traversal style ids (`../etc/passwd`, `analysis/../../secrets`) and returns null when the file is missing
+- Spawn adapters (`claude-local.ts`, `chat-runner.ts`) append `--append-system-prompt-file <path>` to the Claude CLI invocation when an agent has a methodology assigned, so the skill body is layered on top of the agent's existing system prompt at every run / chat turn
+- `GET /api/methodologies` and `GET /api/methodologies/:category/:slug` (`apps/api/src/routes/methodologies.ts`) — list and fetch endpoints with frontmatter parsing, malformed-id 400, missing-file 404
+- `/methodologies` page in the web UI — grouped by category (Analysis / Risk / Governance) with color-coded badges.
+- Methodology dropdown on the New Agent and Edit Agent forms with a "None" default.
+- **Wyckoff Analyst** agent template (`apps/web/src/lib/agent-templates/wyckoff-analyst/`) — combined chart + derivatives analyst preset that auto-assigns the `analysis/wyckoff` methodology
+- **Wyckoff Desk** team blueprint (`apps/web/src/lib/team-blueprints.ts`) — Team Lead + News Analyst + Wyckoff Analyst, where a single phase-aware reporter replaces the usual separate technical + data analysts
+- Trade-decisions terminal — **Lead filter** on the blotter (only renders when ≥2 leads have produced trades in the current window, with friendly agent-name labels); each blotter row now shows the lead's name as a small mono uppercase line so multi-desk views stay readable
+- Unit tests — 4 for `resolveMethodologyPath` covering empty/null id, the path-traversal regex guard, the missing-file branch, and the happy-path absolute-path return; 3 for the `claude-local` methodology flag covering the appended `--append-system-prompt-file <path>`, the unset case, and the unresolvable-id case
+
 ## [0.1.7] - 2026-05-04
 
 ### Added

@@ -37,6 +37,8 @@ interface AgentRole {
   description?: string | null;
 }
 
+interface MethodologyMeta { id: string; label: string; category: string; summary: string; }
+
 const SCHEDULE_PRESETS = [
   { label: "Disabled", value: "disabled" },
   { label: "Every 15 minutes", value: "*/15 * * * *" },
@@ -76,6 +78,8 @@ export default function NewAgentPage() {
   const [reviewDecisions, setReviewDecisions] = useState(false);
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const [disabledMcpTools, setDisabledMcpTools] = useState<Set<string>>(new Set());
+  const [methodologies, setMethodologies] = useState<MethodologyMeta[]>([]);
+  const [methodologySkill, setMethodologySkill] = useState<string>("none");
 
   useEffect(() => {
     apiFetch<McpRegistryResponse>("/api/mcp-servers")
@@ -90,6 +94,9 @@ export default function NewAgentPage() {
       .catch(() => {});
     apiFetch<AgentRole[]>("/api/roles")
       .then(setRoles)
+      .catch(() => {});
+    apiFetch<MethodologyMeta[]>("/api/methodologies")
+      .then(setMethodologies)
       .catch(() => {});
   }, []);
 
@@ -140,6 +147,7 @@ export default function NewAgentPage() {
     setPersistLogs(template.persistLogs ?? false);
     setReviewDecisions(template.reviewDecisions ?? false);
     setMemoryEnabled(template.memoryEnabled ?? false);
+    setMethodologySkill(template.methodologySkill ?? "none");
     setMcpPreset(template.mcpPreset);
     setSchedulePreset(template.schedulePreset);
     const res = await fetch(`/api/templates/${template.id}`);
@@ -169,6 +177,7 @@ export default function NewAgentPage() {
     setUseChrome(false);
     setPersistLogs(false);
     setMemoryEnabled(false);
+    setMethodologySkill("none");
     setMcpPreset("builtin");
     set("cwd", mcpRootPath);
     setSchedulePreset("disabled");
@@ -210,6 +219,7 @@ export default function NewAgentPage() {
             persistLogs: persistLogs || undefined,
             reviewDecisions: reviewDecisions || undefined,
             memoryEnabled: memoryEnabled || undefined,
+            methodologySkill: methodologySkill !== "none" ? methodologySkill : undefined,
             maxTurnsPerRun: Number(form.maxTurnsPerRun),
             ...(selectedTemplate ? (() => {
               const tpl = AGENT_TEMPLATES.find((t) => t.id === selectedTemplate);
@@ -579,6 +589,26 @@ export default function NewAgentPage() {
                   </div>
                 </div>
               )}
+              <div className="space-y-1.5">
+                <Label htmlFor="methodology">Methodology <span className="text-muted-foreground">(optional)</span></Label>
+                <Select value={methodologySkill} onValueChange={setMethodologySkill}>
+                  <SelectTrigger id="methodology"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {methodologies.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <span className="capitalize text-muted-foreground">{m.category}</span>
+                        <span className="mx-1.5 text-muted-foreground">·</span>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Adds a lens to this agent — appended to its system prompt at spawn time. See the{" "}
+                  <a href="/methodologies" className="underline">Methodologies</a> page for what each one teaches.
+                </p>
+              </div>
             </CardContent>
 
             <StepHeader step={4} title="Schedule" description="Run this agent automatically on a timer" />

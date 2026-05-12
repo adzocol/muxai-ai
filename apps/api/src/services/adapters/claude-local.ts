@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
-import { CLAUDE_CLI, MUXAI_ROOT, buildMcpConfig, buildDefaultPrompt } from "../claude-spawn";
+import { CLAUDE_CLI, MUXAI_ROOT, buildMcpConfig, buildDefaultPrompt, resolveMethodologyPath } from "../claude-spawn";
 import { INTERNAL_SECRET } from "../internal-secret";
 import { DEFAULT_MODEL } from "../models";
 import type { Adapter, AdapterAgent, SpawnConfig, SpawnCallbacks } from "./types";
@@ -48,6 +48,7 @@ export const claudeLocalAdapter: Adapter = {
     const disallowedTools = config.disallowedTools as string | undefined;
     const useChrome = Boolean(config.useChrome);
     const isBuiltin = cwd === MUXAI_ROOT;
+    const methodologyPath = resolveMethodologyPath(config.methodologySkill as string | undefined);
 
     // Build system prompt with team context if agent has reporters
     const baseSkillPrompt = config.promptTemplate as string | undefined;
@@ -88,6 +89,7 @@ Before producing a new result, call \`mcp__orchestrator__get_my_decisions\` to r
         : []),
       ...(disallowedTools ? ["--disallowedTools", disallowedTools] : []),
       ...(skillPrompt ? ["--system-prompt", isPreview ? "<system-prompt>" : skillPrompt] : []),
+      ...(methodologyPath ? ["--append-system-prompt-file", methodologyPath] : []),
       "--output-format", "stream-json",
       "--verbose",
       "--print", promptOverride || defaultPrompt,

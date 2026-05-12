@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildDefaultPrompt } from "../claude-spawn";
+import path from "path";
+import { buildDefaultPrompt, resolveMethodologyPath, METHODOLOGIES_ROOT } from "../claude-spawn";
 
 // ── buildDefaultPrompt (pure, no mocks needed) ─��───────────────────
 
@@ -23,6 +24,33 @@ describe("buildDefaultPrompt", () => {
   it("omits capabilities line when null", () => {
     const result = buildDefaultPrompt({ name: "Bot", role: "general", capabilities: null });
     expect(result).not.toContain("capabilities");
+  });
+});
+
+// ── resolveMethodologyPath (pure, uses real fs) ─────────────────────
+
+describe("resolveMethodologyPath", () => {
+  it("returns null for undefined / null / empty id", () => {
+    expect(resolveMethodologyPath(undefined)).toBeNull();
+    expect(resolveMethodologyPath(null)).toBeNull();
+    expect(resolveMethodologyPath("")).toBeNull();
+  });
+
+  it("returns null for malformed ids (blocks path traversal)", () => {
+    expect(resolveMethodologyPath("../etc/passwd")).toBeNull();
+    expect(resolveMethodologyPath("analysis/../../secrets")).toBeNull();
+    expect(resolveMethodologyPath("nocategory")).toBeNull();
+    expect(resolveMethodologyPath("UPPER/case")).toBeNull();
+    expect(resolveMethodologyPath("a/b/c")).toBeNull();
+  });
+
+  it("returns null when the file does not exist on disk", () => {
+    expect(resolveMethodologyPath("analysis/does-not-exist")).toBeNull();
+  });
+
+  it("returns the absolute path for an existing methodology", () => {
+    const result = resolveMethodologyPath("analysis/wyckoff");
+    expect(result).toBe(path.join(METHODOLOGIES_ROOT, "analysis/wyckoff.md"));
   });
 });
 

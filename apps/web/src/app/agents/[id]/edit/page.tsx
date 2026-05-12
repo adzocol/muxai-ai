@@ -20,6 +20,8 @@ interface McpRegistryResponse { rootPath: string; servers: McpServer[]; }
 
 interface AgentRole { id: string; name: string; description?: string | null; }
 
+interface MethodologyMeta { id: string; label: string; category: string; summary: string; }
+
 const SCHEDULE_PRESETS = [
   { label: "Disabled", value: "disabled" },
   { label: "Every 15 minutes", value: "*/15 * * * *" },
@@ -77,6 +79,8 @@ export default function EditAgentPage() {
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const [disabledMcpTools, setDisabledMcpTools] = useState<Set<string>>(new Set());
   const [isControlTower, setIsControlTower] = useState(false);
+  const [methodologies, setMethodologies] = useState<MethodologyMeta[]>([]);
+  const [methodologySkill, setMethodologySkill] = useState<string>("none");
 
   const [form, setForm] = useState({
     name: "",
@@ -138,6 +142,9 @@ export default function EditAgentPage() {
     apiFetch<AgentRole[]>("/api/roles")
       .then(setRoles)
       .catch(() => {});
+    apiFetch<MethodologyMeta[]>("/api/methodologies")
+      .then(setMethodologies)
+      .catch(() => {});
   }, [id]);
 
   useEffect(() => {
@@ -162,6 +169,7 @@ export default function EditAgentPage() {
         setPersistLogs(Boolean(config.persistLogs));
         setReviewDecisions(Boolean(config.reviewDecisions));
         setMemoryEnabled(Boolean(config.memoryEnabled));
+        setMethodologySkill((config.methodologySkill as string) || "none");
         setForm({
           name: agent.name,
           role: agent.role,
@@ -212,6 +220,7 @@ export default function EditAgentPage() {
             persistLogs,
             reviewDecisions,
             memoryEnabled,
+            methodologySkill: methodologySkill !== "none" ? methodologySkill : undefined,
             maxTurnsPerRun: Number(form.maxTurnsPerRun),
           },
           runtimeConfig: cronValue
@@ -537,6 +546,25 @@ export default function EditAgentPage() {
                   </div>
                 </div>
               )}
+              <div className="space-y-1.5">
+                <Label htmlFor="methodology">Methodology <span className="text-muted-foreground">(optional)</span></Label>
+                <Select value={methodologySkill} onValueChange={setMethodologySkill}>
+                  <SelectTrigger id="methodology"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {methodologies.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <span className="capitalize text-muted-foreground">{m.category}</span>
+                        <span className="mx-1.5 text-muted-foreground">·</span>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Adds a lens to this agent — appended to its system prompt at spawn time. See the <a href="/methodologies" className="underline">Methodologies</a> page for what each one teaches.
+                </p>
+              </div>
             </CardContent>
 
             {!isControlTower && (

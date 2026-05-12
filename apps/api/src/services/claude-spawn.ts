@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { prisma } from "../lib/db";
 
@@ -6,6 +6,23 @@ import { prisma } from "../lib/db";
 export const CLAUDE_CLI = process.env.CLAUDE_CLI_PATH || "claude";
 export const MUXAI_ROOT = path.resolve(process.cwd(), "../..");
 export const REGISTRY_PATH = path.join(MUXAI_ROOT, "config/mcp-registry.json");
+export const METHODOLOGIES_ROOT = path.join(MUXAI_ROOT, "packages/methodology-skills/skills");
+
+// ── Methodology resolver ────────────────────────────────────────────
+
+const METHODOLOGY_ID_RE = /^[a-z0-9_-]+\/[a-z0-9_-]+$/;
+
+/**
+ * Resolve a methodology id (e.g. "analysis/wyckoff") to an absolute file path.
+ * Returns null when the id is malformed or the file does not exist.
+ */
+export function resolveMethodologyPath(id: string | undefined | null): string | null {
+  if (!id) return null;
+  if (!METHODOLOGY_ID_RE.test(id)) return null;
+  const filePath = path.join(METHODOLOGIES_ROOT, `${id}.md`);
+  if (!existsSync(filePath)) return null;
+  return filePath;
+}
 
 // ── MCP config builder ──────────────────────────────────────────────
 
