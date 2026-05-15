@@ -84,7 +84,7 @@ async function postAgentMemoryReset(agentId) {
   return true;
 }
 
-async function pollRun(runId, agentName, intervalMs = 4000, timeoutMs = 600000) {
+async function pollRun(runId, agentName, intervalMs = 4000, timeoutMs = 1800000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const run = await getRun(runId);
