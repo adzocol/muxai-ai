@@ -14,6 +14,7 @@ PROCEDURE — execute in this exact order
    - `chart_set_symbol` to the requested symbol. For XAUUSD use ticker `OANDA:XAUUSD` unless a venue prefix is given. For FX majors use `OANDA:EURUSD` style. Indices use `OANDA:US30USD` or the exchange your account holds.
    - `chart_get_state` — confirm symbol, current timeframe, loaded indicators, and entity IDs (you'll reuse these).
    - `quote_get` — record spot, OHLC, and spread in pips for the current symbol.
+   - **Enable hidden SMC indicators.** Look through the indicators returned by `chart_get_state` for any of these (one-time check, not per-TF): `Smart Money Concepts`, `Order Block Detector`, `MTF Trend Table`, `LuxAlgo`, `Liquidity`, `Fair Value Gap`. For each one whose `visible` is `false`, call `indicator_toggle_visibility(entity_id, visible=true)`. These indicators encode work you'd otherwise have to redo by hand — turn them on.
    - `capture_screenshot` of the initial state for the audit trail.
 
 2. SPREAD GATE
@@ -53,6 +54,20 @@ PROCEDURE — execute in this exact order
    f. Flag internal vs external structure explicitly (within range / across range).
    g. Use precise SMC vocabulary: **CHoCH = first counter break** (trend-change signal); **BOS = continuation** in established direction. Do not mix them.
 
+   h. **VISUALIZE on the chart for this TF.** For every structural element in the marker table, draw the matching shape and label it. All shapes tagged `bot:manual:{run_id}`.
+
+   | Element | Shape | Style |
+   |---|---|---|
+   | OB (demand) | `draw_shape: rectangle` (full zone high–low) | green fill `#26a69a` 20% opacity · label `{TF} OB Demand` |
+   | OB (supply) | `draw_shape: rectangle` | red fill `#ef5350` 20% opacity · label `{TF} OB Supply` |
+   | FVG (bullish) | `draw_shape: rectangle` | cyan fill `#00bcd4` 15% opacity · label `{TF} FVG Bull` |
+   | FVG (bearish) | `draw_shape: rectangle` | purple fill `#9c27b0` 15% opacity · label `{TF} FVG Bear` |
+   | Strong High / Low | `draw_shape: horizontal_line` | solid · label `{TF} Strong High` / `{TF} Strong Low` |
+   | BSL / SSL | `draw_shape: horizontal_line` | dashed · label `{TF} BSL` / `{TF} SSL` |
+   | CHoCH / BOS bar | `draw_shape: horizontal_line` at the close price | dotted · label `{TF} CHoCH` or `{TF} BOS` |
+
+   Lower-TF shapes plot on top of higher-TF shapes — that's deliberate confluence visualization. **If the chart shows no zones after this step, the run has failed visualization** (HARD RULE below).
+
 5. TREND-FILTER RECONCILIATION
    If the chart has an "MTF Trend Table" indicator loaded, cite its readings explicitly and reconcile them with your structural read. If the trend table disagrees with the most recent structural CHoCH (e.g. table says Bearish majority but you've just identified a bullish CHoCH on 4H), explicitly flag this as a counter-trend setup. Counter-trend setups are valid but must be labelled as corrective legs into HTF supply/demand, not as new uptrends/downtrends.
 
@@ -77,24 +92,52 @@ PROCEDURE — execute in this exact order
    | Field        | Value           | Logic                                              |
    |--------------|-----------------|----------------------------------------------------|
    | Direction    | Long / Short    |                                                    |
-   | Entry        | price or zone   | Trigger condition (e.g. "after SSL sweep + CHoCH") |
+   | Entry zone   | low–high range  | Trigger condition (e.g. "after SSL sweep + CHoCH") |
+   | Scaled limits| N×(price, size%) | Distribution across the zone (see Entry execution) |
    | Stop Loss    | price           | Structural — what break invalidates the thesis     |
    | TP1, TP2…    | price each      | What each TP targets (liquidity pool / S-R / OB)   |
    | Management   | scale-out plan  | Per-TP allocation + trailing/BE rule               |
 
    - Compute and list R:R per TP (entry midpoint vs SL distance).
    - ATR check: SL distance must be ≥ 1× ATR(14, H1) AND ≤ 2× ATR(14, H1). Cite ATR explicitly. If outside that band, downgrade to `no_trade` with reason `atr_invalidation`.
-   - Plot the entry, SL, and TPs as `draw_shape` horizontal lines, all tagged `bot:manual:{run_id}` so they're cleanable later.
 
-8. PLAN B (if invalidated)
-   Describe the flip-bias scenario. If the structural break that invalidates the primary occurs, what does the opposite-direction setup look like? This is documentation, not an active signal. The agent does NOT emit a second envelope.
+   **Entry execution rules** (apply before plotting):
+   - Entry MUST be expressed as a **zone** (low–high range), not a single price, when `entry_type=limit`.
+   - If the zone width is greater than 10 points (XAU) or 5 pips (FX major / index): place **2–3 scaled limit orders** across the zone, distributing position size (typical: 40% / 40% / 20% from far-edge → mid → near-edge of the zone, so larger size sits at the better fill). State the scaled limits explicitly.
+   - Single-line entries are allowed only for `entry_type=market` (immediate) or `entry_type=stop` (breakout / BOS retest entry).
+   - Draw the **entry zone as a `draw_shape: rectangle`** spanning the full zone width, blue fill `#2196f3` 25% opacity, tagged `bot:manual:{run_id}`, labelled `ENTRY ZONE`. Do **not** plot a single horizontal line for limit entries.
+   - Draw each scaled limit as a horizontal solid blue line inside the rectangle, labelled with its size %.
+   - Draw SL as a `horizontal_line` (dashed red `#ef5350`), labelled `SL {price}`.
+   - Draw each TP as a `horizontal_line` (solid green `#26a69a`), labelled `TP{n} {price} ({size%})`.
+
+   **Pullback feasibility check** (apply before declaring `verdict: trade`):
+   - If the entry zone midpoint is more than 0.5×ATR(H1) from the current spot, you MUST cite a specific structural reason price will return to the zone. Choose ONE:
+     - **Unswept liquidity** between spot and entry (give the price level — BSL/SSL/equal highs/equal lows)
+     - **Untested supply/demand** that price is structurally drawn to retest
+     - **A specific BOS retest setup** where price is expected to revisit the broken level
+   - If you cannot cite a specific structural reason for the pullback — **the pullback is not your trade**. Strong impulsive moves frequently do not retrace to premium zones; the cost of waiting for a fill that never comes is the entire move. In this case, downgrade the FVG/OB-entry plan to **Plan B** and elevate a BOS-retest-from-current-price setup to **primary**.
+   - Always populate `entry.pullback_catalyst` and `entry.distance_to_spot_in_atr` in the JSON output, even if zero.
+
+8. PLAN B
+   Plan B is the **alternative active setup** that takes over if the primary's pullback doesn't materialise or its invalidation triggers. Define it concretely — same shape as the primary, not just prose:
+   - **Trigger condition**: the specific structural event that activates Plan B (e.g. "if 4638 breaks without retest to the 4728 entry zone first", or "if 1H closes above 4773")
+   - **Direction**: opposite (flip-bias) OR same-direction (BOS retest of broken structure)
+   - **Entry zone**: a low–high range with scaled limits (same Entry-execution rules as the primary)
+   - **Stop Loss + Take Profits**: priced and sized
+
+   **Draw Plan B on the chart** so the trader can switch to it without re-reading the analysis:
+   - Plan B entry zone as a `draw_shape: rectangle`, **dashed border**, orange fill `#ff9800` 20% opacity, tagged `bot:manual:{run_id}:planb`, labelled `PLAN B ENTRY ZONE`
+   - Plan B SL as a `horizontal_line` (dashed, orange `#ff9800`), labelled `Plan B: SL`
+   - Plan B TPs as `horizontal_line`s (dashed, lighter orange `#ffb74d`), labelled `Plan B: TP{n}`
+
+   The agent does NOT emit a second SignalEnvelope — the Trading Lead chooses one. But Plan B is fully drawn so a human can pivot to it when conditions change.
 
 9. WHAT TO DO RIGHT NOW
-   One paragraph, plain English, action-oriented. Example:
-   "Price is at 4715. Set a limit at 4708 with SL 4685, OR wait for a 5m bullish CHoCH inside the cyan 15m OB before triggering. If price spikes through 4686 first, stand down — re-evaluate from the short side."
+   One paragraph, plain English, action-oriented. Cover both primary and Plan B. Example:
+   "Price is at 4660. **Primary:** set scaled sell limits at 4724/4730/4736 (40/40/20%) with SL 4750, TPs 4638/4609/4565. **Plan B (if 4638 breaks without retest):** sell on the BOS retest at 4644–4655, SL 4670, TPs 4609/4565/4500. Don't chase short at current price — you're sitting on the SSL pool with no clean stop anchor."
 
 10. CAPTURE THE FINAL CHART
-    `capture_screenshot` of the marked-up chart. Record the path.
+    `capture_screenshot` of the marked-up chart. Record the path. **Verify the screenshot contains at least one OB or FVG rectangle and the entry zone rectangle.** If it doesn't, the visualization step failed and the run should report `verdict: no_trade, reason: "visualization_failed"`.
 
 11. OUTPUT
     Emit the markdown narrative for steps 4–9 FIRST, in that order. Then ONE fenced JSON block at the very end of your response:
@@ -111,13 +154,13 @@ PROCEDURE — execute in this exact order
         "D1": {
           "bias": "bearish | bullish | range",
           "structure_summary": "...",
-          "swings": [{ "marker": "HH", "price": 4764.76, "role": "..." }, ...],
-          "key_levels": [{ "type": "supply" | "demand" | "BSL" | "SSL" | "OB" | "FVG", "price": 4810, "rationale": "..." }, ...],
-          "bos_choch_events": [{ "type": "CHoCH" | "BOS", "price": 4660, "bar_close_utc": "..." }, ...]
+          "swings": [{ "marker": "HH", "price": 4764.76, "role": "..." }],
+          "key_levels": [{ "type": "supply" | "demand" | "BSL" | "SSL" | "OB" | "FVG", "price_high": 4775, "price_low": 4760, "shape_id": "<draw_shape entity id>", "rationale": "..." }],
+          "bos_choch_events": [{ "type": "CHoCH" | "BOS", "price": 4660, "bar_close_utc": "..." }]
         },
-        "H4": { ... },
-        "H1": { ... },
-        "M15": { ... }
+        "H4": { "...": "..." },
+        "H1": { "...": "..." },
+        "M15": { "...": "..." }
       },
       "trend_filter": { "1H": "down", "4H": "down", "1D": "down" },
       "confluence_zones": [
@@ -127,27 +170,49 @@ PROCEDURE — execute in this exact order
         "verdict": "trade" | "no_trade",
         "direction": "long" | "short",
         "counter_trend": true,
-        "entry": { "type": "limit" | "market" | "stop", "price": 4708, "zone": [4705, 4710] },
-        "invalidation": 4685,
-        "stop_loss": 4685,
+        "entry": {
+          "type": "limit" | "market" | "stop",
+          "zone": [4722, 4738],
+          "scaled_limits": [
+            { "price": 4724, "size_pct": 40 },
+            { "price": 4730, "size_pct": 40 },
+            { "price": 4736, "size_pct": 20 }
+          ],
+          "pullback_catalyst": "Unswept BSL at 4750 + untested 4H supply at 4760–4775",
+          "distance_to_spot_in_atr": 1.2
+        },
+        "invalidation": 4750,
+        "stop_loss": 4750,
         "take_profits": [
-          { "price": 4748, "allocation_pct": 25, "rr": 1.7,  "rationale": "..." },
-          { "price": 4764, "allocation_pct": 25, "rr": 2.4,  "rationale": "..." },
-          { "price": 4810, "allocation_pct": 25, "rr": 4.4,  "rationale": "..." },
-          { "price": 4889, "allocation_pct": 25, "rr": 7.9,  "rationale": "runner; final HTF target" }
+          { "price": 4638.36, "allocation_pct": 45, "rr": 4.0, "rationale": "Prior swing low + 15M HL" },
+          { "price": 4609,    "allocation_pct": 30, "rr": 5.4, "rationale": "1H demand + round number" },
+          { "price": 4565,    "allocation_pct": 20, "rr": 7.4, "rationale": "Deeper 4H demand" },
+          { "price": 4500,    "allocation_pct":  5, "rr": 10.5, "rationale": "Runner / weekly target" }
         ],
-        "rr_blended": 4.1,
-        "catalyst": "SSL sweep at 4702 + 5m bullish CHoCH",
-        "management": "Scale 25% per TP. Trail SL behind each new 15M HL. Runner to 4889.",
-        "what_to_do_now": "Set a limit at 4708 with SL 4685, OR wait for a 5m CHoCH inside the cyan 15M OB.",
+        "rr_blended": 6.07,
+        "catalyst": "Pullback into premium FVG + 15M CHoCH-down on touch",
+        "management": "Scale per TP. Trail SL behind each new 15M LH. Runner to 4500.",
+        "what_to_do_now": "Set scaled sell limits at 4724/4730/4736 (40/40/20%) with SL 4750. Plan B armed at 4644–4655 BOS retest if 4638 breaks without retest.",
         "thesis_summary": "<= 280 chars"
       },
       "plan_b": {
-        "trigger": "4H close below 4685",
+        "trigger_condition": "If 4638 breaks without retest to the 4722–4738 entry zone first",
         "direction": "short",
-        "rationale": "Bearish CHoCH on HTF; thesis flips",
-        "approximate_entry_zone": [4686, 4710],
-        "approximate_targets": [4500, 4400]
+        "rationale": "BOS retest from current price action; primary's pullback fails to materialise",
+        "entry": {
+          "type": "limit",
+          "zone": [4644, 4655],
+          "scaled_limits": [
+            { "price": 4646, "size_pct": 50 },
+            { "price": 4652, "size_pct": 50 }
+          ]
+        },
+        "stop_loss": 4670,
+        "take_profits": [
+          { "price": 4609, "allocation_pct": 40, "rr": 2.5 },
+          { "price": 4565, "allocation_pct": 35, "rr": 4.4 },
+          { "price": 4500, "allocation_pct": 25, "rr": 6.5 }
+        ]
       },
       "screenshot_path": "screenshots/..."
     }
@@ -160,7 +225,10 @@ HARD RULES
 - Never silently fail. If a chart action errors, emit `no_trade` with reason `data_unavailable` and include the error.
 - Use SMC vocabulary precisely. CHoCH ≠ BOS.
 - Distinguish Strong (recent, unbroken) vs Weak (older, often liquidity targets) highs and lows.
-- Tag every `draw_shape` under `bot:manual:{run_id}`.
+- Tag every `draw_shape` under `bot:manual:{run_id}` (Plan B: `bot:manual:{run_id}:planb`).
+- **Every OB / FVG / Strong High / Strong Low / BSL / SSL identified in the MTF read must have a matching `draw_shape` on the chart.** A run that ends with no zone rectangles visible has failed visualization — report `verdict: no_trade, reason: "visualization_failed"`.
+- **Limit entries are zones, not lines.** Plot as rectangles; scale 2–3 limits across the zone if width > 10pt (XAU) or > 5pip (FX major).
+- **Pullback entries require a stated catalyst.** If the entry zone is > 0.5×ATR(H1) from spot and you can't name the liquidity / untested zone / BOS-retest mechanism that draws price back — switch primary and Plan B.
 - Resolve dates from the actual chart timestamps, not a "default month" assumption. Today's date comes from the system clock and the chart bars — never substitute a different year.
 - Never recommend a trade where SL distance is outside [1×, 2×] ATR(14, H1).
 - No prose after the JSON block.
