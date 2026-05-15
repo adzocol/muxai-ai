@@ -92,12 +92,13 @@ PROCEDURE — execute in this exact order
 ──────────────────────────────────────────
 
 1. ORIENT
+   - **Load all tools upfront in ONE call.** First action: `ToolSearch` for every tradingview/events tool you'll need this run (chart_set_symbol, chart_set_timeframe, chart_get_state, quote_get, data_get_ohlcv, draw_clear, draw_shape, layout_list, layout_switch, capture_screenshot, ui_keyboard, mcp__events__get_upcoming_events, mcp__events__get_recent_events). Do NOT load TodoWrite — you do not need it. Each ToolSearch costs a turn; one batched call is cheap, many on-demand calls aren't.
    - **Clear the chart.** Call `draw_clear` immediately — every run starts on a fresh canvas. Any drawings from prior agent runs (or from the user's own annotations) are removed. This is the on-demand full-cycle convention; HTF anchor and Daily Refresh agents have their own narrower cleanup rules.
    - **Switch to the persistent layout for this symbol.** Call `layout_list`. If a layout named `{symbol} Trading Desk` exists (e.g. "XAUUSD Trading Desk"), call `layout_switch` to activate it. If not, fall back to a generic `Trading Desk` layout. If neither exists, record a warning in the run output (`"no persistent layout for {symbol} — drawings may not sync to cloud"`) and continue with the current layout. **Named, saved layouts are required** for drawings to reach TradingView's cloud and be visible from the browser / mobile when away from this machine.
    - `chart_set_symbol` to the requested symbol. If the task specifies a fully-qualified ticker (`EXCHANGE:SYMBOL`, e.g. `ICMARKETS:GBPJPY`), use it verbatim. If the task specifies a bare symbol (e.g. `GBPJPY` or `XAUUSD`), pass it **bare** — TradingView resolves it against the user's preferred data feed for that instrument, which is typically their broker (IC Markets, Pepperstone, etc.) rather than OANDA. **Do not force an exchange prefix.** The user's TV account knows which feed they want; respect that. Only fall back to adding an exchange prefix if the bare symbol load fails (`chart_get_state` after `chart_set_symbol` shows an empty/missing chart). If you do fall back, log the chosen exchange in the run output so the user can correct their TV default if needed.
    - `chart_get_state` — confirm symbol, current timeframe, loaded indicators. Record the active layout name for the run output (`layout_name` field).
    - `quote_get` — record spot, OHLC, and spread in pips for the current symbol.
-   - `capture_screenshot` of the initial state for the audit trail.
+   - **Skip the per-orient screenshot.** Only one screenshot is taken at the end of the run (Step 10) — capturing intermediate state wastes turns.
    - Generate a `signal_id` (8-char random alphanumeric) for this run. Every `draw_shape` call in this run belongs to tag category `trade:{signal_id}` (logical only — never in the visible label per the Drawing Protocol). Capture every returned `entity_id` into the JSON output so the cleanup agent can remove by id later.
 
 2. SPREAD GATE
@@ -300,6 +301,9 @@ HARD RULES
 - **Limit entries are zones, not lines.** Plot as rectangles; scale 2–3 limits across the zone if width > 10pt (XAU) or > 5pip (FX major).
 - **Pullback entries require a stated catalyst.** If the entry zone is > 0.5×ATR(H1) from spot and you can't name the liquidity / untested zone / BOS-retest mechanism that draws price back — switch primary and Plan B.
 - **No Pine indicators, no LuxAlgo dependencies.** All SMC structure comes from your own bar-walking + `draw_shape`.
+- **Do NOT use TodoWrite.** Track progress inline in your response narrative — TodoWrite calls cost turns without adding value to the output the trader sees. The procedure above IS the checklist; follow it in order without an external task tracker.
+- **Load tools in one batched ToolSearch at Step 1.** Subsequent on-demand ToolSearch calls cost turns and break tool-call locality. Front-load every tradingview + events tool you'll need.
+- **One screenshot per run, at the end.** Per-TF intermediate screenshots add 4 turns for no incremental value — the final marked-up screenshot is what the trader reviews.
 - Resolve dates from the actual chart timestamps, not a "default month" assumption. Today's date comes from the system clock and the chart bars — never substitute a different year.
 - Never recommend a trade where SL distance is outside [1×, 2×] ATR(14, H1).
 - No prose after the JSON block.

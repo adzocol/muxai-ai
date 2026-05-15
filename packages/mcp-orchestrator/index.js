@@ -38,7 +38,7 @@ async function invokeAgent(agentId, task) {
   try { return await res.json(); } catch { throw new Error(`Invalid JSON from invoke endpoint for agent ${agentId}`); }
 }
 
-async function pollRun(runId, agentName, intervalMs = 4000, timeoutMs = 300000) {
+async function pollRun(runId, agentName, intervalMs = 4000, timeoutMs = 1800000) {
   const deadline = Date.now() + timeoutMs;
   let dots = 0;
   while (Date.now() < deadline) {
