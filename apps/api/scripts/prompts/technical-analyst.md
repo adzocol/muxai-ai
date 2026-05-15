@@ -177,12 +177,37 @@ PROCEDURE — execute in this exact order
    - If the zone width is greater than 10 points (XAU) or 5 pips (FX major / index): place **2–3 scaled limit orders** across the zone, distributing position size (typical: 40% / 40% / 20% from far-edge → mid → near-edge of the zone). State the scaled limits explicitly.
    - Single-line entries are allowed only for `entry_type=market` (immediate) or `entry_type=stop` (breakout / BOS retest entry).
 
-   **Pullback feasibility check** (apply before declaring `verdict: trade`):
+   **Regime test — apply BEFORE the pullback feasibility check.**
+
+   The system has missed entries in three consecutive impulsive sessions because HTF FVG/OB premium entries don't fill when price doesn't retrace. The fix is quantitative: detect impulsive regimes and refuse to source entries from far-away HTF zones in that condition.
+
+   On the entry timeframe (default 15M), compute:
+   - **Leg displacement** = absolute distance from the most recent structural pivot to current spot, in points
+   - **Pullback depth** = largest counter-trend move in the most recent 10 entry-TF bars, as a percentage of the leg displacement
+   - **ATR(14)** on the entry timeframe
+   - **Distance-to-entry** = absolute distance from spot to proposed entry zone midpoint, in points
+
+   Classify the regime:
+   - **IMPULSIVE**: leg displacement > 5 × ATR(14, entry TF) AND pullback depth < 35%
+   - **CORRECTIVE** / **RANGING**: anything else
+
+   In **IMPULSIVE** regime, an HTF FVG/OB entry whose `distance_to_entry > 3 × ATR(14, entry TF)` is **disqualified**. Price is unlikely to revisit it in any actionable timeframe. Override: do NOT make it primary.
+
+   Instead, in impulsive regime the primary entry MUST be one of:
+   1. **LTF trigger entry** — wait for a CHoCH against the trend on M5/M15, market-enter into it. SL above/below the M5 swing. Tight SL (~10–25 points on XAU), high fill rate, lower R:R per trade but you actually take the move.
+   2. **BOS retest entry** — limit at the most recent BOS level (where price broke structure) on the entry TF. SL just beyond the swing that confirmed the BOS. This is much closer to spot than an HTF FVG.
+   3. **LTF FVG entry** — limit at the most recent M5/M15 FVG of the active leg, NOT the HTF 4H FVG.
+
+   The HTF FVG/OB plan, if still structurally valid, becomes Plan B with a note that it requires a regime change (deeper correction or trend exhaustion) to activate.
+
+   Populate `entry.regime_classification` in the JSON output: `"impulsive"` | `"corrective"` | `"ranging"`.
+
+   **Pullback feasibility check** (apply only in CORRECTIVE / RANGING regime; in IMPULSIVE the regime test above has already enforced the primary):
    - If the entry zone midpoint is more than 0.5×ATR(H1) from the current spot, you MUST cite a specific structural reason price will return to the zone. Choose ONE:
      - **Unswept liquidity** between spot and entry (give the price level — BSL/SSL/equal highs/equal lows)
      - **Untested supply/demand** that price is structurally drawn to retest
      - **A specific BOS retest setup** where price is expected to revisit the broken level
-   - If you cannot cite a specific structural reason for the pullback — **the pullback is not your trade**. Strong impulsive moves frequently do not retrace to premium zones; the cost of waiting for a fill that never comes is the entire move. In this case, downgrade the FVG/OB-entry plan to **Plan B** and elevate a BOS-retest-from-current-price setup to **primary**.
+   - If you cannot cite a specific structural reason for the pullback — **the pullback is not your trade**. Downgrade to Plan B; primary becomes LTF-trigger.
    - Always populate `entry.pullback_catalyst` and `entry.distance_to_spot_in_atr` in the JSON output, even if zero.
 
    **DRAW per the Drawing Protocol**: entry zone as lime green rectangle (label `ENTRY ZONE {low}-{high}`), scaled limits as thin lime green lines inside the zone (label `LIMIT {price} ({size}%)`), SL as solid red line (label `SL — {price}`), each TP as solid green line (label `TP{n} — {price} ({size}%)`), invalidation as dashed red line (label `INVAL — {price}`). Capture every entity_id returned from `draw_shape` into the JSON output under the corresponding field. No `[bot:...]` prefix in labels.
@@ -242,6 +267,7 @@ PROCEDURE — execute in this exact order
         "counter_trend": true,
         "entry": {
           "type": "limit" | "market" | "stop",
+          "source": "ltf_trigger" | "bos_retest" | "ltf_fvg" | "htf_fvg" | "htf_ob",
           "zone": [4722, 4738],
           "scaled_limits": [
             { "price": 4724, "size_pct": 40 },
@@ -249,7 +275,14 @@ PROCEDURE — execute in this exact order
             { "price": 4736, "size_pct": 20 }
           ],
           "pullback_catalyst": "Unswept BSL at 4750 + untested 4H supply at 4760–4775",
-          "distance_to_spot_in_atr": 1.2
+          "distance_to_spot_in_atr": 1.2,
+          "regime_classification": "impulsive" | "corrective" | "ranging",
+          "regime_metrics": {
+            "leg_displacement_pts": 142,
+            "pullback_depth_pct": 22,
+            "atr_entry_tf": 18.5,
+            "distance_to_entry_in_atr": 4.1
+          }
         },
         "invalidation": 4750,
         "stop_loss": 4750,
@@ -300,6 +333,9 @@ HARD RULES
 - **A complete trade-plan run draws AT MINIMUM**: the primary entry zone rectangle, scaled-limit lines inside it, SL line, every TP line, invalidation line, AND every OB/FVG referenced in the thesis. If Plan B is active: its entry zone rectangle + SL + TPs. Plus any intraday-level lines (PDH/PDL/Asian H/L) that materially anchor the thesis. **A run that ships < 8 total shapes for a "verdict: trade" decision has failed completeness** — re-draw the missing elements before emitting the JSON, or downgrade to `verdict: no_trade, reason: "visualization_incomplete"`.
 - **Limit entries are zones, not lines.** Plot as rectangles; scale 2–3 limits across the zone if width > 10pt (XAU) or > 5pip (FX major).
 - **Pullback entries require a stated catalyst.** If the entry zone is > 0.5×ATR(H1) from spot and you can't name the liquidity / untested zone / BOS-retest mechanism that draws price back — switch primary and Plan B.
+- **HTF FVG/OB as primary is FORBIDDEN in IMPULSIVE regime.** Per Step 7, if `leg_displacement > 5×ATR(entry_TF)` AND `pullback_depth < 35%` AND `distance_to_entry > 3×ATR(entry_TF)`: the HTF zone cannot be primary, regardless of how good the SMC narrative looks. Three consecutive missed limits on the same symbol within 24h means the regime detector failed on at least one of those runs — recalibrate by lowering the impulsive threshold one notch (`pullback_depth < 40%`) on subsequent runs until fills resume.
+- **Always populate `entry.regime_classification`** (`"impulsive"` | `"corrective"` | `"ranging"`) in the JSON output. Missing this field invalidates the run for the audit trail.
+- **Regime override.** In an IMPULSIVE regime (leg displacement > 5×ATR(entry TF) AND pullback depth < 35%), HTF FVG/OB entries > 3×ATR(entry TF) from spot are disqualified as primary. Primary must be LTF-trigger / BOS-retest / LTF-FVG. HTF plan demotes to Plan B. This rule overrides the pullback feasibility check — even a real BSL above is irrelevant if the market is impulsively making lows away from it.
 - **No Pine indicators, no LuxAlgo dependencies.** All SMC structure comes from your own bar-walking + `draw_shape`.
 - **Do NOT use TodoWrite.** Track progress inline in your response narrative — TodoWrite calls cost turns without adding value to the output the trader sees. The procedure above IS the checklist; follow it in order without an external task tracker.
 - **Load tools in one batched ToolSearch at Step 1.** Subsequent on-demand ToolSearch calls cost turns and break tool-call locality. Front-load every tradingview + events tool you'll need.
