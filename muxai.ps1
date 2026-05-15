@@ -6,10 +6,14 @@
 #   .\muxai.ps1 stop
 #   .\muxai.ps1 restart
 #
-# Run from anywhere — the script auto-locates itself.
+# Run from anywhere - the script auto-locates itself.
 # Status is read-only (safe to spam). Start opens new terminal windows
 # for the API and Web so you can see their logs; Ctrl+C in either kills
 # that service.
+#
+# Pure ASCII - Windows PowerShell 5.1 reads scripts as Windows-1252
+# when no BOM is present, so any UTF-8 multi-byte char (em-dash,
+# arrows, box-drawing) breaks the parser.
 
 param(
   [Parameter(Position=0)]
@@ -49,7 +53,6 @@ function Show-Status {
   Write-Host "muxAI status" -ForegroundColor Cyan
   Write-Host ("-" * 60)
 
-  # Ports
   $apiUp = Test-Port -Port $ApiPort
   $webUp = Test-Port -Port $WebPort
   $pgUp  = Test-Port -Port $PgPort
@@ -57,7 +60,6 @@ function Show-Status {
   Write-Host ("  API    (port {0,-5}) : {1}" -f $ApiPort, $(if ($apiUp) { "LISTENING" } else { "closed" })) -ForegroundColor $(if ($apiUp) { "Green" } else { "DarkGray" })
   Write-Host ("  PG     (port {0,-5}) : {1}" -f $PgPort, $(if ($pgUp)  { "LISTENING" } else { "closed" })) -ForegroundColor $(if ($pgUp)  { "Green" } else { "DarkGray" })
 
-  # Processes
   $muxaiNode = @(Get-MuxaiNodeProcesses)
   $claude = @(Get-ClaudeProcesses)
   Write-Host ""
@@ -68,16 +70,14 @@ function Show-Status {
   }
   Write-Host ("  claude.exe procs   : {0}" -f $claude.Count) -ForegroundColor $(if ($claude.Count -gt 0) { "Yellow" } else { "DarkGray" })
 
-  # DB
   Write-Host ""
   if (Test-Path $DbDir) {
     $size = (Get-ChildItem $DbDir -Recurse -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
     Write-Host ("  Database directory : {0}  ({1:N0} bytes)" -f $DbDir, $size) -ForegroundColor Green
   } else {
-    Write-Host ("  Database directory : {0}  (MISSING — will be created on first start)" -f $DbDir) -ForegroundColor Yellow
+    Write-Host ("  Database directory : {0}  (MISSING - will be created on first start)" -f $DbDir) -ForegroundColor Yellow
   }
 
-  # Temp files
   $tmp = @(Get-ChildItem -Path $env:TEMP -Filter "muxai-*.tmp" -ErrorAction SilentlyContinue)
   Write-Host ("  Stale temp files   : {0}" -f $tmp.Count) -ForegroundColor $(if ($tmp.Count -gt 0) { "Yellow" } else { "DarkGray" })
 
@@ -121,10 +121,9 @@ function Start-Muxai {
   if (Test-Port -Port $ApiPort) {
     Write-Host "  API is up on port $ApiPort." -ForegroundColor Green
   } else {
-    Write-Host "  API did not come up within 60s — check the API window for errors." -ForegroundColor Red
+    Write-Host "  API did not come up within 60s - check the API window for errors." -ForegroundColor Red
   }
 
-  # Start Web window
   Start-Process powershell -ArgumentList @(
     "-NoExit",
     "-Command",
@@ -139,9 +138,9 @@ function Start-Muxai {
   if (Test-Port -Port $WebPort) {
     Write-Host "  Web is up on port $WebPort." -ForegroundColor Green
     Write-Host ""
-    Write-Host "  → Open http://localhost:$WebPort" -ForegroundColor Cyan
+    Write-Host "  Open http://localhost:$WebPort" -ForegroundColor Cyan
   } else {
-    Write-Host "  Web did not come up within 45s — check the Web window for errors." -ForegroundColor Red
+    Write-Host "  Web did not come up within 45s - check the Web window for errors." -ForegroundColor Red
   }
 }
 
@@ -176,7 +175,6 @@ function Stop-Muxai {
     }
   }
 
-  # Sweep stale temp files left by claude-local adapter spawns
   $tmp = @(Get-ChildItem -Path $env:TEMP -Filter "muxai-*.tmp" -ErrorAction SilentlyContinue)
   if ($tmp.Count -gt 0) {
     foreach ($f in $tmp) {
@@ -187,22 +185,21 @@ function Stop-Muxai {
 
   Start-Sleep -Seconds 2
 
-  # Verify ports closed
   $apiStillUp = Test-Port -Port $ApiPort
   $webStillUp = Test-Port -Port $WebPort
   $pgStillUp  = Test-Port -Port $PgPort
   if ($apiStillUp -or $webStillUp -or $pgStillUp) {
     Write-Host ""
     Write-Host "  Warning: ports still listening after stop:" -ForegroundColor Yellow
-    if ($apiStillUp) { Write-Host "    API ($ApiPort) still up — process likely orphaned" -ForegroundColor Yellow }
-    if ($webStillUp) { Write-Host "    Web ($WebPort) still up — process likely orphaned" -ForegroundColor Yellow }
-    if ($pgStillUp)  { Write-Host "    PG  ($PgPort) still up — embedded-postgres orphaned" -ForegroundColor Yellow }
+    if ($apiStillUp) { Write-Host "    API ($ApiPort) still up - process likely orphaned" -ForegroundColor Yellow }
+    if ($webStillUp) { Write-Host "    Web ($WebPort) still up - process likely orphaned" -ForegroundColor Yellow }
+    if ($pgStillUp)  { Write-Host "    PG  ($PgPort) still up - embedded-postgres orphaned" -ForegroundColor Yellow }
   } else {
     Write-Host "  All ports closed." -ForegroundColor Green
   }
 }
 
-# ── Dispatch ────────────────────────────────────────────────────────
+# Dispatch
 switch ($Command) {
   "status"  { Show-Status }
   "start"   { Start-Muxai;  Show-Status }
