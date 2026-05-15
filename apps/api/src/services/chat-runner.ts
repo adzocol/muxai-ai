@@ -15,7 +15,13 @@ interface RunChatTurnOpts {
 }
 
 export async function runChatTurn(opts: RunChatTurnOpts): Promise<string> {
-  const { chatSessionId, prompt, agentId, useMcp = false, maxMs = 900_000, onText } = opts;
+  // Default 30min. Control Tower's invoke_agent → Team Lead → TA chain can
+  // take 15-20min for a forex/metals/crypto full cycle. The previous 900_000
+  // (15min) silently SIGKILL'd Control Tower BEFORE Team Lead finished, even
+  // though the MCP timeouts (orchestrator + control-tower pollRun + Claude
+  // CLI MCP_TOOL_TIMEOUT) were all 30min. The whole chain only works if
+  // every layer's timeout is aligned. Caller can override if needed.
+  const { chatSessionId, prompt, agentId, useMcp = false, maxMs = 1_800_000, onText } = opts;
 
   const session = await prisma.chatSession.findUnique({ where: { id: chatSessionId } });
   if (!session) throw new Error("Session not found");
