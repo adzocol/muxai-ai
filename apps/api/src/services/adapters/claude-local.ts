@@ -152,6 +152,19 @@ Before producing a new result, call \`mcp__orchestrator__get_my_decisions\` to r
       MUXAI_RUN_ID: runId || "<generated-at-runtime>",
       MUXAI_API_URL: `http://localhost:${process.env.API_PORT || 3001}`,
       MUXAI_INTERNAL_SECRET: isPreview ? "<runtime-secret>" : INTERNAL_SECRET,
+      // Claude CLI's per-MCP-tool-call timeout defaults to 10 min. Our
+      // orchestrator's ask_reporter polls until the reporter finishes —
+      // for a full Technical Analyst run with 4 TFs, 25 draw_shapes,
+      // and final screenshot, that legitimately takes 15-20 min. Bump
+      // the ceiling to 30 min so the Claude host doesn't fire the
+      // tool-call timeout before our orchestrator's internal 30-min
+      // poll deadline. Same env var applies to Control Tower's
+      // invoke_agent → mcp-orchestrator → ask_reporter chain.
+      MCP_TOOL_TIMEOUT: "1800000",
+      // MCP server initialization timeout (default 30s; explicit for
+      // clarity — TradingView MCP can take a few seconds to attach to
+      // CDP on cold start).
+      MCP_TIMEOUT: "60000",
       ...(agent.reports.length > 0 && {
         MUXAI_REPORTS: JSON.stringify(
           agent.reports.map((r) => ({
