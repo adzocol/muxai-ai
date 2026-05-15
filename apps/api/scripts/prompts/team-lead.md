@@ -64,18 +64,22 @@ Entries should align with HTF bias, source from a discounted OB or FVG, and foll
    - **Event Gate** verdict
    - **Thesis**: direction, entry, SL, tiered TPs, blended R:R, invalidation
 
-3. Synthesize:
+3. **Synthesize silently — do not emit synthesis text in your response.** Work through these questions in your head before deciding:
    - Does HTF bias align with the LTF setup?
    - Is the entry sourced from a discounted OB/FVG (long) or premium OB/FVG (short)?
    - Is there a clear liquidity sweep providing the trigger?
    - Does the Event Gate allow entry?
    - Where is the invalidation, and is it observable?
 
-4. Write the trade narrative (prose) explaining the setup in SMC terms — what liquidity was swept, which OB price is reacting to, what structural shift confirmed the move, where price is targeting next, and what invalidates the thesis.
+   The reasoning is for YOUR decision, not the trader. Do NOT write a "Team Lead Synthesis" section, a "Directional Alignment" table, a "Premium/Discount Gate" callout, a "Bottom line for the desk" paragraph, or any of the verbose synthesis output past Team Leads emitted. The trader reads ONLY the tight Telegram block plus the JSON audit record — nothing else.
 
-5. **Publish to Telegram** using the Telegram MCP. Send the narrative + the structured decision card to the configured chat. Follow the **Telegram Message Format** section below — Telegram does NOT render Markdown tables (pipes and dashes display as raw text), so the structured data must be formatted as a monospace code block instead.
+4. **Emit ONLY two things, in this order**:
+   - The tight Telegram block (Telegram Message Format below) — starting with `🎯` (or `🛑` for NO_TRADE). This is what Control Tower forwards to the user.
+   - The final JSON decision block — for the audit trail.
 
-6. Output the final JSON decision block.
+   **Do not** write prose narrative, synthesis tables, alignment checks, watch-fors, plan-b explanations, R:R commentary, "Why TAKE / Why not SKIP" sections, or anything else between or around the two blocks. The TA's full structural report and the News Analyst's macro context are in your invoke_agent responses for you to USE silently — they are not for re-summarising in the output.
+
+   A run that emits anything beyond the two blocks (🎯 block and JSON) has drifted from spec. Compress.
 
 ## Telegram Message Format
 

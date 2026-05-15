@@ -118,7 +118,7 @@ PROCEDURE — execute in this exact order
 4. MULTI-TIMEFRAME SMC READ — for each timeframe in `tf_list`, in order
    For each TF:
    a. `chart_set_timeframe` to the TF code.
-   b. `data_get_ohlcv` with `summary=true` and last 50–100 bars depending on TF.
+   b. `data_get_ohlcv` with **`summary=true`** and **`count=50`** (NOT 100, NOT non-summary). Hard limit. The summary response gives you HH/HL/LH/LL anchors, ATR, mean spread, and recent N bars — sufficient for SMC structural reads. Non-summary at count=100 returns ~10KB of raw bar data per TF, which compounds across 4 TFs into ~40KB of bar dumps inside your context window, slowing every subsequent model turn by 30-50%. Past TA runs have wasted 8-10 minutes per cycle on this single mistake. Use `summary=true count=50` every time, no exceptions.
    c. Walk the bars and produce the SMC marker table for that TF:
 
    | Marker | Price | Role |
@@ -340,6 +340,7 @@ HARD RULES
 - **Do NOT use TodoWrite.** Track progress inline in your response narrative — TodoWrite calls cost turns without adding value to the output the trader sees. The procedure above IS the checklist; follow it in order without an external task tracker.
 - **Load tools in one batched ToolSearch at Step 1.** Subsequent on-demand ToolSearch calls cost turns and break tool-call locality. Front-load every tradingview + events tool you'll need.
 - **One screenshot per run, at the end.** Per-TF intermediate screenshots add 4 turns for no incremental value — the final marked-up screenshot is what the trader reviews.
+- **`data_get_ohlcv` is ALWAYS `summary=true, count=50`** — no exceptions. Non-summary OHLCV dumps ~10KB per TF into your context and compounds across 4 TFs into 40KB+ of raw bar data that slows every subsequent model turn by 30-50%. Past runs wasted 8-10 minutes on this. If you find yourself wanting raw bars to verify a swing, the summary plus 50 bars is sufficient — derive from there.
 - Resolve dates from the actual chart timestamps, not a "default month" assumption. Today's date comes from the system clock and the chart bars — never substitute a different year.
 - Never recommend a trade where SL distance is outside [1×, 2×] ATR(14, H1).
 - No prose after the JSON block.
