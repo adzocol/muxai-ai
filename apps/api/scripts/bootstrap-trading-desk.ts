@@ -43,6 +43,10 @@ const AGENT_NAME = process.env.TA_AGENT_NAME ?? "Technical Analyst";
 const TA_MODEL = "claude-sonnet-4-6";
 const DEFAULT_INVOCATION_PROMPT =
   "Analyse XAUUSD across D1, 4H, 1H, 15M using Smart Money Concepts.";
+// 4 TFs × (set_timeframe + ohlcv + screenshot) + event/spread gates +
+// 15-25 draw_shape calls + layout_switch + Ctrl+S + output. Default of
+// 10 hits the wall before reaching the visualization step on every run.
+const TA_MAX_TURNS = Number(process.env.TA_MAX_TURNS) || 60;
 
 const PROMPT_PATH = path.join(__dirname, "prompts", "technical-analyst.md");
 
@@ -95,6 +99,7 @@ async function handleTechnicalAnalystPrompt() {
     ...prev,
     promptTemplate,
     defaultPrompt: DEFAULT_INVOCATION_PROMPT,
+    maxTurnsPerRun: TA_MAX_TURNS,
   };
   if (!KEEP_MODEL) {
     merged.model = TA_MODEL;
@@ -103,11 +108,12 @@ async function handleTechnicalAnalystPrompt() {
   console.log(`${logTag()} [ta] Target agent: id=${agent.id} name="${agent.name}" role="${agent.role}"`);
   console.log(`${logTag()} [ta] Current adapterConfig keys: ${Object.keys(prev).join(", ") || "(none)"}`);
   console.log(`${logTag()} [ta] Model handling: ${KEEP_MODEL ? "PRESERVE existing (--keep-model)" : `set to "${TA_MODEL}"`}`);
+  console.log(`${logTag()} [ta] maxTurnsPerRun: ${TA_MAX_TURNS}`);
   console.log(`${logTag()} [ta] Field-level diff:`);
 
   const diffKeys = KEEP_MODEL
-    ? (["promptTemplate", "defaultPrompt"] as const)
-    : (["promptTemplate", "defaultPrompt", "model"] as const);
+    ? (["promptTemplate", "defaultPrompt", "maxTurnsPerRun"] as const)
+    : (["promptTemplate", "defaultPrompt", "model", "maxTurnsPerRun"] as const);
   for (const key of diffKeys) {
     const before = prev[key];
     const after = (merged as Record<string, unknown>)[key];
