@@ -114,13 +114,14 @@ async function cleanupStaleRuns() {
   // Reset agents back to idle — they're spawnable again immediately. Prior
   // behaviour set them to "error" which required manual UI intervention to
   // recover. The stale-run record above already preserves the failure for
-  // audit; the agent itself isn't broken.
+  // audit; the agent itself isn't broken. Includes "error" so agents stuck
+  // there from previous sessions (before this fix) also auto-recover.
   const agents = await prisma.agent.updateMany({
-    where: { status: "running" },
+    where: { status: { in: ["running", "error"] } },
     data: { status: "idle" },
   });
   if (agents.count > 0) {
-    console.log(`[muxai] Reset ${agents.count} agent(s) from running → idle`);
+    console.log(`[muxai] Reset ${agents.count} agent(s) → idle`);
   }
 
   // Sweep any temp files left behind by claude-local adapter spawns from
