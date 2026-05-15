@@ -70,8 +70,9 @@ PROCEDURE — execute in this exact order
 ──────────────────────────────────────────
 
 1. ORIENT
+   - **Switch to the persistent layout for this symbol.** Call `layout_list`. If a layout named `{symbol} Trading Desk` exists (e.g. "XAUUSD Trading Desk"), call `layout_switch` to activate it. If not, fall back to a generic `Trading Desk` layout. If neither exists, record a warning in the run output (`"no persistent layout for {symbol} — drawings may not sync to cloud"`) and continue with the current layout. **Named, saved layouts are required** for drawings to reach TradingView's cloud and be visible from the browser / mobile when away from this machine.
    - `chart_set_symbol` to the requested symbol. For XAUUSD use ticker `OANDA:XAUUSD` unless a venue prefix is given. For FX majors use `OANDA:EURUSD` style. Indices use `OANDA:US30USD` or the exchange your account holds.
-   - `chart_get_state` — confirm symbol, current timeframe, loaded indicators.
+   - `chart_get_state` — confirm symbol, current timeframe, loaded indicators. Record the active layout name for the run output (`layout_name` field).
    - `quote_get` — record spot, OHLC, and spread in pips for the current symbol.
    - `capture_screenshot` of the initial state for the audit trail.
    - Generate a `signal_id` (8-char random alphanumeric) for this run. Every draw_shape in this run uses tag `bot:trade:{signal_id}` per the Drawing Protocol.
@@ -177,8 +178,9 @@ PROCEDURE — execute in this exact order
    One paragraph, plain English, action-oriented. Cover both primary and Plan B. Example:
    "Price is at 4660. **Primary:** set scaled sell limits at 4724/4730/4736 (40/40/20%) with SL 4750, TPs 4638/4609/4565. **Plan B (if 4638 breaks without retest):** sell on the BOS retest at 4644–4655, SL 4670, TPs 4609/4565/4500. Don't chase short at current price — you're sitting on the SSL pool with no clean stop anchor."
 
-10. CAPTURE THE FINAL CHART
-    `capture_screenshot` of the marked-up chart. Record the path. **Verify the screenshot contains at least one OB or FVG rectangle and the entry zone rectangle.** If it doesn't, the visualization step failed and the run should report `verdict: no_trade, reason: "visualization_failed"`.
+10. CAPTURE THE FINAL CHART & FORCE-SAVE
+    - `capture_screenshot` of the marked-up chart. Record the path. **Verify the screenshot contains at least one OB or FVG rectangle and the entry zone rectangle.** If it doesn't, the visualization step failed and the run should report `verdict: no_trade, reason: "visualization_failed"`.
+    - **Force-save the layout** so drawings sync to TradingView's cloud without waiting for the autosave timer (which can be up to 60s). Call `ui_keyboard` with `key: "s"` and `modifiers: ["ctrl"]`. Required for the markup to be visible in the browser / on mobile within seconds of run completion. If the active layout is "Unsaved" the Ctrl+S will open a Save-As dialog instead of saving — the run should still proceed but record `layout_persisted: false` and warn the trader to name + save the layout once.
 
 11. OUTPUT
     Emit the markdown narrative for steps 4–9 FIRST, in that order. Then ONE fenced JSON block at the very end of your response:
@@ -187,6 +189,8 @@ PROCEDURE — execute in this exact order
     {
       "symbol": "XAUUSD",
       "signal_id": "a1b2c3d4",
+      "layout_name": "XAUUSD Trading Desk",
+      "layout_persisted": true,
       "snapshot_utc": "2026-05-10T14:00:00Z",
       "spot": 4715.62,
       "spread_pips": 22,
