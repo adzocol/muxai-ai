@@ -1,10 +1,32 @@
 import { spawn } from "child_process";
 import type { ChildProcess } from "child_process";
+import { writeFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
+import path from "path";
+import { randomBytes } from "crypto";
 import { CLAUDE_CLI, MUXAI_ROOT, buildMcpConfig, buildDefaultPrompt } from "../claude-spawn";
 import { INTERNAL_SECRET } from "../internal-secret";
 import { DEFAULT_MODEL } from "../models";
 import type { Adapter, AdapterAgent, SpawnConfig, SpawnCallbacks } from "./types";
 import { registerAdapter } from "./types";
+
+// ── Temp-file helpers ───────────────────────────────────────────────
+// Windows has a ~32KB command-line length limit. Inlining the full
+// system prompt (~25KB) plus the MCP config JSON (~5KB) plus other args
+// blows past it and spawn() fails with ENAMETOOLONG. The Claude CLI
+// supports `--system-prompt-file <path>` and `--mcp-config <path>` so
+// we write those payloads to OS temp files and pass file paths instead.
+
+function writeTempFile(content: string, suffix: string): string {
+  const filename = `muxai-${suffix}-${randomBytes(6).toString("hex")}.tmp`;
+  const filepath = path.join(tmpdir(), filename);
+  writeFileSync(filepath, content, { encoding: "utf-8" });
+  return filepath;
+}
+
+function safeUnlink(p: string): void {
+  try { unlinkSync(p); } catch { /* file may already be gone */ }
+}
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -76,6 +98,34 @@ Before producing a new result, call \`mcp__orchestrator__get_my_decisions\` to r
       mcpConfigJson = await buildMcpConfig(mcpExclude);
     }
 
+    // Write large payloads to temp files to keep the command-line under
+    // Windows' 32KB limit (ENAMETOOLONG). Preview mode keeps placeholders
+    // since no spawn happens. Real spawns write actual files; heartbeat.ts
+    // cleans them up via spawnConfig.cleanupPaths after onClose.
+    const cleanupPaths: string[] = [];
+
+    let mcpConfigArg: string | null = null;
+    if (mcpConfigJson) {
+      if (isPreview) {
+        mcpConfigArg = "<mcp-config>";
+      } else {
+        mcpConfigArg = writeTempFile(mcpConfigJson, `mcp-${agent.id}`);
+        cleanupPaths.push(mcpConfigArg);
+      }
+    }
+
+    let systemPromptArg: string | null = null;
+    let systemPromptFlag: "--system-prompt" | "--system-prompt-file" = "--system-prompt-file";
+    if (skillPrompt) {
+      if (isPreview) {
+        systemPromptArg = "<system-prompt>";
+        systemPromptFlag = "--system-prompt";
+      } else {
+        systemPromptArg = writeTempFile(skillPrompt, `sysprompt-${agent.id}`);
+        cleanupPaths.push(systemPromptArg);
+      }
+    }
+
     const args = [
       ...(resumeSessionId ? ["--resume", isPreview ? "<session-id>" : resumeSessionId] : []),
       "--model", model,
@@ -83,11 +133,11 @@ Before producing a new result, call \`mcp__orchestrator__get_my_decisions\` to r
       "--dangerously-skip-permissions",
       ...(effort ? ["--effort", effort] : []),
       ...(useChrome ? ["--chrome"] : []),
-      ...(mcpConfigJson
-        ? ["--mcp-config", isPreview ? "<mcp-config>" : mcpConfigJson, "--strict-mcp-config"]
+      ...(mcpConfigArg
+        ? ["--mcp-config", mcpConfigArg, "--strict-mcp-config"]
         : []),
       ...(disallowedTools ? ["--disallowedTools", disallowedTools] : []),
-      ...(skillPrompt ? ["--system-prompt", isPreview ? "<system-prompt>" : skillPrompt] : []),
+      ...(systemPromptArg ? [systemPromptFlag, systemPromptArg] : []),
       "--output-format", "stream-json",
       "--verbose",
       "--print", promptOverride || defaultPrompt,
@@ -114,7 +164,7 @@ Before producing a new result, call \`mcp__orchestrator__get_my_decisions\` to r
       }),
     };
 
-    return { command: CLAUDE_CLI, args, cwd, env };
+    return { command: CLAUDE_CLI, args, cwd, env, cleanupPaths };
   },
 
   spawn(config: SpawnConfig, callbacks: SpawnCallbacks): ChildProcess {
@@ -124,6 +174,15 @@ Before producing a new result, call \`mcp__orchestrator__get_my_decisions\` to r
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
     });
+
+    // Unlink temp files (system-prompt-file, mcp-config-file) once the child
+    // exits — regardless of success/failure/error. Without this, OS tmpdir
+    // fills up with stale files over time.
+    const cleanup = () => {
+      for (const p of config.cleanupPaths ?? []) safeUnlink(p);
+    };
+    child.once("close", cleanup);
+    child.once("error", cleanup);
 
     let stdoutBuffer = "";
     child.stdout!.on("data", (data: Buffer) => {

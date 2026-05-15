@@ -20,6 +20,12 @@ export interface SpawnConfig {
   args: string[];
   cwd: string;
   env: Record<string, string>;
+  /**
+   * Temp files the adapter created for this spawn (e.g. system-prompt-file,
+   * mcp-config-file written to avoid Windows ENAMETOOLONG on long CLI args).
+   * The spawn caller MUST unlink these after the process closes.
+   */
+  cleanupPaths?: string[];
 }
 
 /** Callbacks the spawn caller provides to handle process events. */

@@ -101,16 +101,51 @@ app.get("/api/health", (_req, res) => {
 async function cleanupStaleRuns() {
   const result = await prisma.heartbeatRun.updateMany({
     where: { status: { in: ["running", "queued"] } },
-    data: { status: "failed", finishedAt: new Date(), errorMsg: "Marked failed on startup — process died without cleanup" },
+    data: {
+      status: "failed",
+      finishedAt: new Date(),
+      exitCode: -1,
+      errorMsg: "Marked failed on startup — process died without cleanup",
+    },
   });
   if (result.count > 0) {
     console.log(`[muxai] Cleaned up ${result.count} stale run(s) from previous session`);
   }
-  // Reset any agents stuck in running state
-  await prisma.agent.updateMany({
+  // Reset agents back to idle — they're spawnable again immediately. Prior
+  // behaviour set them to "error" which required manual UI intervention to
+  // recover. The stale-run record above already preserves the failure for
+  // audit; the agent itself isn't broken.
+  const agents = await prisma.agent.updateMany({
     where: { status: "running" },
-    data: { status: "error" },
+    data: { status: "idle" },
   });
+  if (agents.count > 0) {
+    console.log(`[muxai] Reset ${agents.count} agent(s) from running → idle`);
+  }
+
+  // Sweep any temp files left behind by claude-local adapter spawns from
+  // prior sessions. File names match `muxai-*.tmp` in OS tmpdir.
+  try {
+    const fs = await import("fs");
+    const os = await import("os");
+    const path = await import("path");
+    const tmpDir = os.tmpdir();
+    const files = fs.readdirSync(tmpDir);
+    let unlinked = 0;
+    for (const f of files) {
+      if (f.startsWith("muxai-") && f.endsWith(".tmp")) {
+        try {
+          fs.unlinkSync(path.join(tmpDir, f));
+          unlinked++;
+        } catch { /* ignore */ }
+      }
+    }
+    if (unlinked > 0) {
+      console.log(`[muxai] Unlinked ${unlinked} stale temp file(s) from prior spawns`);
+    }
+  } catch (err) {
+    console.warn(`[muxai] Temp-file sweep failed (non-fatal):`, err instanceof Error ? err.message : err);
+  }
 }
 
 async function main() {
