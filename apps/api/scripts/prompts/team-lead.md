@@ -79,62 +79,42 @@ Entries should align with HTF bias, source from a discounted OB or FVG, and foll
 
 ## Telegram Message Format
 
-Telegram's MarkdownV2 parser does not render Markdown tables (`| col | col |`). Tables come through as raw pipes and dashes, which is what the trader's been complaining about. Use this shape instead:
+**Terse. Three sections + one link. Nothing else.** The trader reads this on a phone between meetings — every extra line is noise.
 
 ```
-🎯 <SYMBOL> <DIRECTION> · <CONFIDENCE> confidence
+🎯 <SYMBOL> <DIRECTION> — <CONFIDENCE> confidence
 
-<one-sentence headline>
+WHY
+<one sentence — the single sharpest reason this is a good setup. ~20 words. e.g. "SSL sweep at 4702 + 4H bullish CHoCH; price reclaiming H1 OB at 4690.">
 
-```
-Entry         Limit <price> (zone <low>–<high>)
-Stop Loss     <price>
-TP1 (<pct>%)  <price>
-TP2 (<pct>%)  <price>
-TP3 (<pct>%)  <price>
-Blended R:R   ~<value>
-Invalidation  <condition>
-```
+HOW
+• Entry: limit <price> (zone <low>–<high>)
+• SL: <price>
+• TPs: <price> (<pct>%) / <price> (<pct>%) / <price> (<pct>%)
+• R:R: <blended>
 
-📊 SMC setup
-• HTF bias:        <D1/4H structure>
-• Liquidity swept: <which pool, which price>
-• Entry source:    <OB/FVG, TF, price range>
-• Trigger:         <CHoCH bar / sweep / BOS, TF>
-• Target:          <next liquidity pool>
-
-📌 Plan B (if invalidated)
-<one-sentence flip-bias plan>
-
-⚠️ Watch for
-• <risk 1>
-• <risk 2>
-
-Event verdict: <CLEAR / CAUTION / AVOID-ENTRY>
+📊 https://www.tradingview.com/chart/?symbol=<SYMBOL>
 ```
 
-Rules:
-
-- **No Markdown tables.** Use the monospace code block (triple backticks) for the Execution section so the price columns line up.
-- **Use Telegram-safe formatting only.** Bold via `*text*`; backtick for inline code; triple backtick for code blocks. Avoid underscores in symbol names (e.g. write `XAU/USD` not `XAU_USD`) — underscores trigger italic in MarkdownV2 and the parser breaks. If a symbol or price string contains any of `_*[]()~>#+-=|{}.!`, either escape with `\` or wrap the whole token in inline backticks.
-- **Emoji prefix per section** as shown — 🎯 for the headline, 📊 for SMC, 📌 for Plan B, ⚠️ for risks. They help the trader scan a long message on mobile.
-- **Pad column labels to align** in the code block (8-12 chars before the value).
-- **No nested bullets, no quote blocks, no headers**. Telegram MarkdownV2 ignores most of those.
-- **One message, ~1500 chars max.** If you must abbreviate, keep the Execution code block intact and trim narrative/SMC sections first.
-
-For `NO_TRADE` decisions, use a shorter shape:
+For `NO_TRADE`:
 
 ```
-🛑 <SYMBOL> NO TRADE · <CONFIDENCE>
-
-Reason: <no_trade_reason>
-
-📊 What the team saw
-• <one bullet>
-• <one bullet>
-
-Event verdict: <verdict>
+🛑 <SYMBOL> NO TRADE — <reason in one sentence>
 ```
+
+**Hard rules — the trader will reject anything that doesn't follow these:**
+
+- **WHY is ONE sentence.** Not two, not three. If you can't compress the reason to ~20 words, you don't understand the setup well enough to take it.
+- **HOW is exactly four bullets.** Entry, SL, TPs (combined), R:R. No "management plan" bullet, no "trigger condition" bullet, no "invalidation" bullet — those live in the JSON for audit.
+- **No Plan B in the Telegram message.** It's in the JSON.
+- **No "watch for" bullets, no event verdict line, no SMC-setup section.** All in the JSON for audit. The exception: if the event gate is `CAUTION` or `AVOID-ENTRY`, prefix the headline with a `⚠️` and append `(event risk: <event>)` to the headline line. Don't add a separate section.
+- **The chart link is the LAST thing in the message.** Format exactly: `https://www.tradingview.com/chart/?symbol=<SYMBOL>` where `<SYMBOL>` is the bare symbol from the run task (e.g. `XAUUSD`, `GBPJPY`). Telegram auto-linkifies. The user opens it on their phone/browser, sees their TV cloud layout for that symbol with the agent's drawings.
+- **No Markdown tables.** Telegram MarkdownV2 doesn't render `|col|col|`.
+- **Bold via `*text*`** if you must. Mostly you don't need formatting at all — clarity beats decoration.
+- **Avoid characters that break MarkdownV2:** `_*[]()~>#+-=|{}.!`. If a price or symbol contains them, wrap that token in backticks.
+- **Max ~600 chars.** If you're over, you've put something in that doesn't belong.
+
+The full structured decision (every TP, SL, R:R, SMC breakdown, Plan B, watch-fors, event verdict) is emitted as the final JSON block AFTER the Telegram message. That's the audit record — the trader doesn't read it but the desk's history does.
 
 ## Final Output Rules
 
